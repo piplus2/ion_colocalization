@@ -1,3 +1,37 @@
+.ppmDist <- function(m1, m2, method="average")
+{
+  validMethods <- c("average", "mutual", "fixed")
+  if (!(method %in% validMethods))
+  {
+    stop("Accepted values for 'ref' are:", paste0(validMethods, collapse = ","), "\n")
+  }
+  if (method == 'average')
+  {
+    refm <- mean(c(m1, m2))
+    d <- mean(c(abs(m1 - refm) / refm, abs(m2 - refm) / refm)) * 1e6
+  } else if (method == 'mutual')
+  {
+    d <- mean(c(abs(m1 - m2) / m1, abs(m1 - m2) / m2)) * 1e6
+  } else if (method == 'fixed')
+  {
+    d <- abs(m2 - m1) / m1 * 1e6
+  }
+  return(d)
+}
+
+.ppmDistArray <- function(mArray, mRef, method = "mutual")
+{
+  validMethods <- c("mutual", "fixed")
+  if (!(method %in% validMethods))
+  {
+    stop("Accepted values for 'method' are:", paste0(validMethods, collapse = ","), "\n")
+  }
+  d <- sapply(mArray, function(z) {
+    .ppmDist(z, mRef, method)
+  })
+  return(d)
+}
+
 loadReferenceSpectra <- function(listDataDirs,
                                  filename = "avg_spectrum_within.RData")
 {
@@ -27,14 +61,14 @@ matchPeaksBetweenSamples <- function(samplesPath, refPeaksList,
                                      verbose=TRUE)
 {
   require(MALDIquant)
-  
+
   .unlist <- function(x) { unlist(x, recursive=FALSE, use.names=FALSE) }
-  
+
   ## Check if MALDIquant peaks
-  
+
   numSamples <- length(samplesPath)
   stopifnot(length(refPeaksList) == numSamples)
-  
+
   if (!is.null(noisePeaks))
   {
     stopifnot(length(noisePeaks) == numSamples)
@@ -45,7 +79,7 @@ matchPeaksBetweenSamples <- function(samplesPath, refPeaksList,
       return(refPeaksList[[z]])
     })
   }
-  
+
   ## customized binPeaks from MALDIquant
   mass <- unname(.unlist(lapply(refPeaksList, function(x)x@mass)))
   intensities <- .unlist(lapply(refPeaksList, function(x)x@intensity))
@@ -54,22 +88,22 @@ matchPeaksBetweenSamples <- function(samplesPath, refPeaksList,
   mass <- s$x
   intensities <- intensities[s$ix]
   samples <- samples[s$ix]
-  
+
   # binning
   mass <- .binPeaks_(mass=mass, intensities=intensities, samples=samples,
                      tolerance=tolerance/1e6, grouper=.grouperStrict_)
   tableMasses <- table(mass)
   ## Group mass/intensities by sample ids
   lIdx <- split(seq_along(mass), samples)
-  
+
   tableMasses <- as.numeric(names(tableMasses[tableMasses >=
                                                 freqThreshold * numSamples]))
   stopifnot(!any(duplicated(tableMasses)))
   commonMasses <- sort(unique(tableMasses))
-  
+
   if (verbose)
     cat("num. common masses: ", length(commonMasses), "\n")
-  
+
   if (deiso)
   {
     cat('de-isotoping...\n')
@@ -77,11 +111,11 @@ matchPeaksBetweenSamples <- function(samplesPath, refPeaksList,
     commonMasses <- as.numeric(names(deiso_cmz_list))
     cat('length m/z vector =', length(commonMasses), '\n')
   }
-  
+
   ## Match intensity matrices
   .assignNewIntensityMat(samplesPath, commonMasses, mass, lIdx,
                          inFile=inFile, outFile=outFile, verbose=verbose)
-  
+
   return(commonMasses)
 }
 
@@ -110,26 +144,26 @@ matchPeaksBetweenSamples <- function(samplesPath, refPeaksList,
   {
     if (verbose)
       message(sprintf("%d/%d: %s", s, numSamples, samplesPath[s]))
-    
+
     load(paste0(samplesPath[s], "/", inFile))
-    
+
     shape <- sz
     sampleMasses <- mz
     stopifnot(length(mz) == ncol(X))
     imageShape <- shape
     stopifnot(nrow(X) == prod(shape))
     rm(shape)
-    
+
     if (verbose)
       cat("dim. sample matrix:", dim(X), "\n")
-    
+
     ## Assign NA to all the zeros
     X[X == 0] <- NA
-    
+
     ## Match the sample masses with the common masses
     if (verbose)
       cat("num. masses sample:", length(sampleMasses), ".\n")
-    
+
     matchIdx1 <- which(!is.na(match(round(commonMasses, 4),
                                     round(masses[indices[[s]]], 4))))
     matchIdx2 <- which(!is.na(match(round(masses[indices[[s]]], 4),
@@ -137,7 +171,7 @@ matchPeaksBetweenSamples <- function(samplesPath, refPeaksList,
 
     if (verbose)
       cat("matched ", length(matchIdx1), " masses.\n")
-    
+
     ## Fill the new intensity matrix
     Xmatched <- matrix(NA, nrow(X), length(commonMasses),
                        dimnames = list(NULL, commonMasses))
@@ -145,14 +179,14 @@ matchPeaksBetweenSamples <- function(samplesPath, refPeaksList,
     X <- Xmatched
     rm(Xmatched)
     gc()
-    
+
     ## Save
-    
+
     cat("saving the matched intensity matrix...\n")
-    
+
     if (is.null(outFile))
       outFile <- "X_match_between.RData"
-    
+
     tryCatch({
       if (file.exists(paste0(samplesPath[s], "/", outFile)))
         file.remove(paste0(samplesPath[s], "/", outFile))
@@ -170,26 +204,26 @@ matchPeaksBetweenSamples <- function(samplesPath, refPeaksList,
 .binPeaks_ <- function(mass, intensities, samples, tolerance,
                        grouper=.grouperStrict_, ...) {
   n <- length(mass)
-  
+
   # calculate difference
   d <- diff(mass)
-  
+
   # grouper function
   grouper <- match.fun(grouper)
-  
+
   ## stack based implementation taken from
   ## caMassClass 1.9 R/msc.peaks.clust.R written by
   ## Jarek Tuszynski <jaroslaw.w.tuszynski@saic.com>
   ## it is a lot of faster than recursion
-  
+
   ## store boundaries in a stack
   nBoundaries <- max(20L, floor(3L * log(n)))
   boundary <- list(left=double(nBoundaries), right=double(nBoundaries))
-  
+
   currentBoundary <- 1L
   boundary$left[currentBoundary] <- 1L
   boundary$right[currentBoundary] <- n
-  
+
   ## workhorse loop
   while (currentBoundary > 0L) {
     ## find largest gap
@@ -197,9 +231,9 @@ matchPeaksBetweenSamples <- function(samplesPath, refPeaksList,
     right <- boundary$right[currentBoundary]
     currentBoundary <- currentBoundary - 1L
     gaps <- d[left:(right - 1L)]
-    
+
     gapIdx <- which.max(gaps) + left - 1L
-    
+
     ## left side
     l <- grouper(mass=mass[left:gapIdx],
                  intensities=intensities[left:gapIdx],
@@ -213,7 +247,7 @@ matchPeaksBetweenSamples <- function(samplesPath, refPeaksList,
     } else {
       mass[left:gapIdx] <- l
     }
-    
+
     ## right side
     r <- grouper(mass=mass[(gapIdx + 1L):right],
                  intensities=intensities[(gapIdx + 1L):right],
@@ -227,7 +261,7 @@ matchPeaksBetweenSamples <- function(samplesPath, refPeaksList,
     } else {
       mass[(gapIdx + 1L):right] <- r
     }
-    
+
     ## stack size have to be increased?
     ## (should rarely happen because recursion deep is mostly < 20)
     if (currentBoundary == nBoundaries) {
@@ -246,27 +280,27 @@ deisotope <- function(mzVector, isoDelta = c(1.002, 1.0045))
 {
   stopifnot(length(isoDelta) == 2)
   stopifnot(is.numeric(isoDelta))
-  
+
   listDeiso <- list()
   listDeiso[[1]] <- mzVector[1]
   names(listDeiso)[1] <- mzVector[1]
   mzVector <- mzVector[-1]
-  
-  while(length(mzVector) > 0)
+
+  while (length(mzVector) > 0)
   {
     currMZ <- mzVector[1]
     mzVector <- mzVector[-1]
-    
+
     foundIso <- F
     skip <- F
-    
+
     for (i in 1:length(listDeiso))
     {
       if (foundIso || skip)
       {
         break
       }
-      
+
       for (j in 1:length(listDeiso[[i]]))
       {
         deltaMZ <- abs(currMZ - listDeiso[[i]][j])
@@ -289,7 +323,7 @@ deisotope <- function(mzVector, isoDelta = c(1.002, 1.0045))
         }
       }
     }
-    
+
     # If no isotope is found, then add the current m/z as a new element of the
     # de-isotoped list
     if (!foundIso)
@@ -298,6 +332,45 @@ deisotope <- function(mzVector, isoDelta = c(1.002, 1.0045))
       names(listDeiso)[length(listDeiso)] <- currMZ
     }
   }
-  
+
   return(listDeiso)
+}
+
+matchPeaksWithCMZ <- function(listDataDirs,
+                              commonMZ,
+                              tolPPM = 20,
+                              inputFilename = 'X_matched_within_SPUTNIK.RData',
+                              outFilename = 'X_matched_with_cmz.RData',
+                              verbose = TRUE)
+{
+  for (i in 1:length(listDataDirs))
+  {
+    if (verbose)
+      cat(sprintf('%d/%d: %s\n', i, length(listDataDirs), listDataDirs[i]))
+
+    temp <- new.env()
+    load(paste0(listDataDirs[i], '/', inputFilename), envir = temp)  # Load X
+
+    ## Match the m/z values with the common m/z
+    matched_ix <- array(NA, length(commonMZ))
+    for (j in 1:length(commonMZ))
+    {
+      minDistIdx <- which.min(abs(commonMZ[j] - temp$mz))
+      minDistPPM <- .ppmDist(temp$mz[minDistIdx], commonMZ[j])
+      if (minDistPPM <= tolPPM)
+        matched_ix[j] <- minDistIdx
+    }
+    if (verbose)
+      cat('unmatched peaks:', sum(is.na(matched_ix)), '\n')
+    stopifnot(all(diff(matched_ix) > 0, na.rm = T))
+
+    X <- temp$X[, matched_ix]
+    colnames(X) <- commonMZ
+    attr(X, 'mass') <- commonMZ
+
+    save(X, file = paste0(list_samples_dirs[idx_test[i]], '/', outFilename))
+    rm(temp)
+    gc()
+  }
+  return(invisible(NULL))
 }

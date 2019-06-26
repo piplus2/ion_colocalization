@@ -52,15 +52,22 @@ cat("Matching the peaks between MS images...\n")
 
 # Load the average spectra to be used as reference
 
+data_env <- .load(here("DATA", "RData", "split_idx_cv_test.RData"))
+idx_samples <- .vector(mode = "list", length = 2, names = SETS)
+idx_samples$cv <- data_env$idx_cv
+idx_samples$test <- data_env$idx_test
+rm(data_env)
+
 cat("Loading the average spectra...\n")
 
-ref_spectra <- .vector(mode = "list", length = num_samples, names = c(1:num_samples))
-for (i in 1:num_samples)
+ref_spectra <- .vector(mode = "list", length = length(idx_samples$cv),
+                       names = c(1:length(idx_samples$cv)))
+for (i in 1:length(idx_samples$cv))
 {
   cat("MS image:", i, "\n")
 
   data_env <- .load(here(
-    samples_dirs[i],
+    samples_dirs[idx_samples$cv[i]],
     "avg_spectrum_within_SPUTNIK.RData"
   )) # Load avg_spectrum
   ref_spectra[[i]] <- data_env$avg_spectrum
@@ -73,7 +80,7 @@ rm(i)
 cat("Matching peaks...\n")
 
 cmz <- matchPeaksBetweenSamples(
-  samplesPath = samples_dirs,
+  samplesPath = samples_dirs[idx_samples$cv],
   refPeaksList = ref_spectra,
   deiso = TRUE, # De-isotope
   freqThreshold = 1.0, # Only peaks present in all the MS images
@@ -84,6 +91,14 @@ cmz <- matchPeaksBetweenSamples(
 )
 
 save(cmz, file = here(DATA_DIR, "cmz_between_samples.RData"))
+
+# Match the test samples
+matchPeaksWithCMZ(sample_dirs[idx_samples$test],
+                  cmz,
+                  tolPPM = 20,
+                  inputFilename = 'X_matched_between_SPUTNIK.RData',
+                  outFilename = 'X_matched_with_cmz.RData',
+                  verbose = TRUE)
 
 pacman::p_load("MALDIquant", "here")
 
