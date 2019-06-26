@@ -55,14 +55,19 @@ loadReferenceSpectra <- function(listDataDirs,
 }
 
 
-matchPeaksBetweenSamples <- function(samplesPath, refPeaksList,
-                                     freqThreshold=1.0, tolerance=20,
-                                     inFile=NULL, outFile=NULL,
+matchPeaksBetweenSamples <- function(samplesPath,
+                                     refPeaksList,
+                                     freqThreshold=1.0,
+                                     tolerance=20,
+                                     deiso = TRUE,
+                                     noisePeaks = NULL,
+                                     inFile=NULL,
+                                     outFile=NULL,
                                      verbose=TRUE)
 {
   require(MALDIquant)
 
-  .unlist <- function(x) { unlist(x, recursive=FALSE, use.names=FALSE) }
+  .unlist <- function(x) { unlist(x, recursive = FALSE, use.names = FALSE) }
 
   ## Check if MALDIquant peaks
 
@@ -84,14 +89,14 @@ matchPeaksBetweenSamples <- function(samplesPath, refPeaksList,
   mass <- unname(.unlist(lapply(refPeaksList, function(x)x@mass)))
   intensities <- .unlist(lapply(refPeaksList, function(x)x@intensity))
   samples <- c(rep.int(seq_along(refPeaksList), lengths(refPeaksList)))
-  s <- sort.int(mass, method="quick", index.return=TRUE)
+  s <- sort.int(mass, method = "quick", index.return = TRUE)
   mass <- s$x
   intensities <- intensities[s$ix]
   samples <- samples[s$ix]
 
   # binning
-  mass <- .binPeaks_(mass=mass, intensities=intensities, samples=samples,
-                     tolerance=tolerance/1e6, grouper=.grouperStrict_)
+  mass <- .binPeaks_(mass = mass, intensities = intensities, samples = samples,
+                     tolerance = tolerance/1e6, grouper = .grouperStrict_)
   tableMasses <- table(mass)
   ## Group mass/intensities by sample ids
   lIdx <- split(seq_along(mass), samples)
@@ -114,7 +119,7 @@ matchPeaksBetweenSamples <- function(samplesPath, refPeaksList,
 
   ## Match intensity matrices
   .assignNewIntensityMat(samplesPath, commonMasses, mass, lIdx,
-                         inFile=inFile, outFile=outFile, verbose=verbose)
+                         inFile = inFile, outFile = outFile, verbose = verbose)
 
   return(commonMasses)
 }
@@ -134,7 +139,6 @@ matchPeaksBetweenSamples <- function(samplesPath, refPeaksList,
   }
   return(meanMass)
 }
-
 
 .assignNewIntensityMat <- function(samplesPath, commonMasses, masses, indices,
                                    inFile=NULL, outFile=NULL, verbose=TRUE)
@@ -306,7 +310,7 @@ deisotope <- function(mzVector, isoDelta = c(1.002, 1.0045))
         deltaMZ <- abs(currMZ - listDeiso[[i]][j])
         # If the current distance is larger than the second extremal, it means
         # that we are aleady too far from a possible isotope. Thus, we can skip.
-        if (deltaMZ > isoDelta[2])
+        if (listDeiso[[i]][j] - currMZ > isoDelta[2])
         {
           skip <- T
           break

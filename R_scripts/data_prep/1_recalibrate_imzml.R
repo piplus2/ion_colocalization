@@ -45,7 +45,7 @@ tissue_dirs <- lapply(TISSUES, function(z) {
 
 stopifnot(all(unlist(lapply(tissue_dirs, length)) != 0)) # Check if empty
 
-list_imzml_path <- .vector(mode = "list", length = length(TISSUES), n = TISSUES)
+list_imzml_path <- .vector(mode = "list", length = length(TISSUES), names = TISSUES)
 for (i in 1:NUM_TISSUES)
 {
   list_imzml_path[[i]] <- array(NA, length(tissue_dirs[[i]]))
@@ -83,9 +83,15 @@ for (i in 1:length(TISSUES))
     cat("MS image", j, "/", num_samples[i], "\n")
 
     peaks <- importImzMl(list_imzml_path[[i]][j], centroided = TRUE, verbose = FALSE)
+    xy_coords <- matrix(NA, length(peaks), 2)
+    for (k in 1:length(peaks))
+    {
+      xy_coords[k, ] <- c(peaks[[k]]@metaData$imaging$pos["x"],
+                          peaks[[k]]@metaData$imaging$pos["y"])
+    }
 
-    image_shape <- peaks[[length(peaks)]]@metaData$imaging$pos
-
+    image_shape <- c(length(unique(xy_coords[, 1])),
+                     length(unique(xy_coords[, 2])))
     stopifnot(length(peaks) == prod(image_shape))
 
     print(list_imzml_path[[i]][j])
@@ -99,12 +105,14 @@ for (i in 1:length(TISSUES))
       dir.create(save_dir, recursive = TRUE)
     }
 
-    recal_peaks <- recalibratePeaks(peaks,
+    recal_peaks <- recalibratePeaks(
+      peaks,
       referenceMZ = REF_MZ,
       imageShape = image_shape,
-      tolerancePPM = 20,
-      genPlot = TRUE, saveRecal = TRUE,
-      saveFilename = here(save_dir, "raw_recal.imzML")
+      tolerancePPM = 10,
+      genPlot = TRUE,
+      saveRecal = TRUE,
+      saveFilename = paste0(save_dir, "/raw_recal.imzML")
     )
 
     rm(peaks, image_shape, sample_name, save_dir, recal_peaks)

@@ -16,25 +16,28 @@ pacman::p_load("SPUTNIK", "MALDIquant", "magrittr", "here")
 
 # SETUP ----
 
-FUNC_DIR <- here("R_scripts", "functions")
 DATA_DIR <- here("DATA", "RAW_recal")
 OUT_DIR <- here("DATA", "RData")
 
 TISSUES <- c("breast", "colorectal", "ovarian")
 NUM_TISSUES <- length(TISSUES)
 
+if (!dir.exists(here::here("plots", "binary_ROI"))) {
+  dir.create(here::here("plots", "binary_ROI"), recursive = TRUE)
+}
+
 # SOURCE ----
 
-source(here(FUNC_DIR, "misc", "load.R"))
-source(here(FUNC_DIR, "preprocessing", "match_peaks_within_sample.R"))
+source(here("R_scripts", "functions", "misc", "load.R"))
+source(here("R_scripts", "functions", "preprocessing", "match_peaks_within_sample.R"))
 
 # SAMPLES ----
 
 samples_dirs <- c()
 for (i in 1:length(TISSUES))
 {
-  tmp <- list.dirs(here(DATA_DIR, TISSUES[i]),
-    full.names = FALSE,
+  tmp <- list.dirs(here("DATA", "RAW_recal", TISSUES[i]),
+    full.names = TRUE,
     recursive = FALSE
   )
   samples_dirs <- c(samples_dirs, tmp)
@@ -46,8 +49,9 @@ num_samples <- length(samples_dirs)
 
 samples_names <- gsub(DATA_DIR, "", samples_dirs)
 sapply(samples_names, function(z) {
-  dir.create(here(OUT_DIR, z),
-    recursive = TRUE
+  dir.create(paste0(OUT_DIR, "/", z),
+    recursive = TRUE,
+    showWarnings = FALSE
   )
 })
 
@@ -62,10 +66,9 @@ for (i in 1:num_samples)
   cat("Matching peaks within the MS image...\n")
 
   peaks_matched_within <- matchPeaksWithinSample(
-    imzMLPath = here(samples_dirs[i], "raw_recal.imzML"),
+    imzMLPath = paste0(samples_dirs[i], "/raw_recal.imzML"),
     minSignalPixelsFrac = 0.005, # Keep only if present in 0.5% of total pixels
     tolPPM = 10,
-    deiso = T,
     verbose = T
   )
 
@@ -84,12 +87,12 @@ for (i in 1:num_samples)
 
   cat("Saving the matched peaks and the average spectrum...\n")
 
-  save(avg_spectrum, file = here(
-    OUT_DIR, samples_names[i],
+  save(avg_spectrum, file = paste0(
+    OUT_DIR, samples_names[i], "/",
     "avg_spectrum_within.RData"
   ))
-  save(peaks_matched_within, file = here(
-    OUT_DIR, samples_names[i],
+  save(peaks_matched_within, file = paste0(
+    OUT_DIR, samples_names[i], "/",
     "X_matched_within.RData"
   ))
 
@@ -105,8 +108,8 @@ for (i in 1:num_samples)
   # Load sample
   cat(sprintf("%d/%d: %s\n", i, num_samples, samples_names[i]))
 
-  data_env <- .load(here(
-    OUT_DIR, samples_names[i],
+  data_env <- .load(paste0(
+    OUT_DIR, samples_names[i], "/",
     "X_matched_within.RData"
   )) ## Load X, mz, shape
   # Set the NA to 0
@@ -138,12 +141,22 @@ for (i in 1:num_samples)
   gc()
 
   # Extract the ROI
-  ref_roi <- refAndROIimages(msiData = msX, roiMethod = "kmeans2")
+  ref_roi <- refAndROIimages(
+    msiData = msX,
+    roiMethod = "kmeans2",
+    mzQueryRef = c(880, 900),
+    mzTolerance = Inf,
+    useFullMZRef = FALSE
+  )
+  ref_roi$ROI <- removeSmallObjects(
+    ref_roi$ROI,
+    threshold = max(getShapeMSI(msX))
+  )
 
   # Save ROI
   roi_mat <- ref_roi$ROI@values
-  save(roi_mat, file = here(
-    OUT_DIR, samples_names[i],
+  save(roi_mat, file = paste0(
+    OUT_DIR, samples_names[i], "/",
     "ROI_bin_before.RData"
   ))
 
@@ -175,25 +188,42 @@ for (i in 1:num_samples)
   save(
     list = c("X", "sz", "mz"),
     file = paste0(
-      OUT_DIR, samples_names[i],
+      OUT_DIR, samples_names[i], "/",
       "X_matched_within_SPUTNIK.RData"
     )
   )
   save(avg_spectrum,
     file = paste0(
-      OUT_DIR, samples_names[i],
+      OUT_DIR, samples_names[i], "/",
       "avg_spectrum_within_SPUTNIK.RData"
     )
   )
 
   # Extract final ROI
+  ref_roi <- refAndROIimages(
+    msiData = msX,
+    roiMethod = "kmeans2",
+    mzQueryRef = c(880, 900), mzTolerance = Inf,
+    useFullMZRef = FALSE
+  )
+  ref_roi$ROI <- removeSmallObjects(
+    ref_roi$ROI,
+    threshold = max(getShapeMSI(msX))
+  )
 
-  ref_roi <- refAndROIimages(msX, roiMethod = "kmeans2")
   roi_mat <- ref_roi$ROI@values
   save(roi_mat, file = paste0(
-    OUT_DIR, samples_names[i],
+    OUT_DIR, samples_names[i], "/",
     "ROI_bin_final.RData"
   ))
+
+  tmp_fname <- strsplit(samples_names[i], "/")[[1]]
+  tmp_fname <- paste0(tmp_fname[2:3], collapse = "_")
+  png(filename = here("plots", "binary_ROI", paste0(tmp_fname, ".png")))
+  plot(ref_roi$ROI)
+  dev.off()
+
+  Sys.sleep(0.1)
 
   rm(gpf, pcf, X, mz, sz)
   gc()

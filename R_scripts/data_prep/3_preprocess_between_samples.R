@@ -18,6 +18,7 @@ pacman::p_load("MALDIquant", "here")
 # SOURCE ----
 source(here("R_scripts", "functions", "misc", "set_dir.R"))
 source(here("R_scripts", "functions", "misc", "load.R"))
+source(here("R_scripts", "functions", "misc", "vector.R"))
 source(here("R_scripts", "functions", "preprocessing", "match_peaks_between_samples.R"))
 
 # START ----
@@ -33,8 +34,8 @@ NUM_TISSUES <- length(TISSUES)
 samples_dirs <- c()
 for (i in 1:NUM_TISSUES)
 {
-  tmp <- list.dirs(here(DATA_DIR, TISSUES[i]),
-    full.names = FALSE,
+  tmp <- list.dirs(here("DATA", "RData", TISSUES[i]),
+    full.names = TRUE,
     recursive = FALSE
   )
   samples_dirs <- c(samples_dirs, tmp)
@@ -52,6 +53,7 @@ cat("Matching the peaks between MS images...\n")
 
 # Load the average spectra to be used as reference
 
+SETS <- c("cv", "test")
 data_env <- .load(here("DATA", "RData", "split_idx_cv_test.RData"))
 idx_samples <- .vector(mode = "list", length = 2, names = SETS)
 idx_samples$cv <- data_env$idx_cv
@@ -66,8 +68,8 @@ for (i in 1:length(idx_samples$cv))
 {
   cat("MS image:", i, "\n")
 
-  data_env <- .load(here(
-    samples_dirs[idx_samples$cv[i]],
+  data_env <- .load(paste0(
+    samples_dirs[idx_samples$cv[i]], "/",
     "avg_spectrum_within_SPUTNIK.RData"
   )) # Load avg_spectrum
   ref_spectra[[i]] <- data_env$avg_spectrum
@@ -90,7 +92,7 @@ cmz <- matchPeaksBetweenSamples(
   verbose = TRUE
 )
 
-save(cmz, file = here(DATA_DIR, "cmz_between_samples.RData"))
+save(cmz, file = here("DATA", "RData", "cmz_between_samples.RData"))
 
 # Match the test samples
 matchPeaksWithCMZ(sample_dirs[idx_samples$test],

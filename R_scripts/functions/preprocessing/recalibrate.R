@@ -6,38 +6,39 @@
 recalibratePeaks <- function(listPeaks, referenceMZ, imageShape,
                              tolerancePPM = 10,
                              genPlot = TRUE, saveRecal = TRUE,
-                             saveFilename)
-{
+                             saveFilename) {
   require(MALDIquant)
   require(MALDIquantForeign)
 
   numspectra <- length(listPeaks)
 
-  if (genPlot)
+  if (genPlot) {
     par(mfrow = c(2, 2))
+  }
 
   # Find the peaks closer than tolerancePPM to the referenceMZ
-  matched <- lapply(listPeaks, function(z)
-  {
-    d <- sapply(z@mass, function(w) (w - referenceMZ) / referenceMZ * 1e6)
+  matched <- lapply(listPeaks, function(z) {
+    d <- sapply(z@mass, function(w) abs(w - referenceMZ) / referenceMZ * 1e6)
 
-    if (any(d <= tolerancePPM))
-    {
-      matchidx <- which.min(d)
+    if (sum(d <= tolerancePPM) > 0) {
+      matchidx <- which(d <= tolerancePPM)
+      if (length(matchidx) > 1) {
+        matchidx <- matchidx[which.max(z@intensity[matchidx])]
+      }
       matchdist <- z@mass[matchidx] - referenceMZ
-    } else
-    {
+    } else {
       matchidx <- NA
       matchdist <- NA
     }
     return(c(matchidx, matchdist))
   })
-
   matched_mat <- matrix(NA, numspectra, 2,
-                        dimnames = list(NULL, c('matchedIdx', 'distFromRef')))
+    dimnames = list(NULL, c("matchedIdx", "distFromRef"))
+  )
 
-  for (j in 1:numspectra)
+  for (j in 1:numspectra) {
     matched_mat[j, ] <- matched[[j]]
+  }
 
   rm(matched)
 
@@ -50,31 +51,38 @@ recalibratePeaks <- function(listPeaks, referenceMZ, imageShape,
     listPeaks[[z]]@intensity[matched_mat$matchedIdx[z]]
   })
 
-  if (genPlot)
+  if (genPlot) {
     image(matrix(log2(matched_intensity + 1), imageShape[1], imageShape[2]))
+  }
 
   print(min(matched_mat$distFromRef, na.rm = TRUE))
   print(max(matched_mat$distFromRef, na.rm = TRUE))
 
-  if (genPlot)
+  if (genPlot) {
     plot(1:numspectra, matched_mat$distFromRef,
-         ylim = c(-max(abs(matched_mat$distFromRef), na.rm = TRUE),
-                  max(abs(matched_mat$distFromRef), na.rm = TRUE)),
-         pch = 20)
+      ylim = c(
+        -max(abs(matched_mat$distFromRef), na.rm = TRUE),
+        max(abs(matched_mat$distFromRef), na.rm = TRUE)
+      ),
+      pch = 20
+    )
+  }
 
   # Fit LOESS
-  df <- data.frame(x = matched_pixels_idx,
-                   y = matched_mat$distFromRef[matched_pixels_idx])
+  df <- data.frame(
+    x = matched_pixels_idx,
+    y = matched_mat$distFromRef[matched_pixels_idx]
+  )
   fit <- loess(y ~ x, data = df)
 
   # Update the peaks position
   fitteddist <- predict(fit, seq(1, numspectra))
 
-  if (genPlot)
-    points(1:numspectra, fitteddist, col = 'red', pch = 20)
+  if (genPlot) {
+    points(1:numspectra, fitteddist, col = "red", pch = 20)
+  }
 
-  if (any(is.na(fitteddist)))
-  {
+  if (any(is.na(fitteddist))) {
     # If some predictions fail, take the average of the shifts in the interval
     # [-2, -1, x, +1, +2]
     fittedNA <- which(is.na(fitteddist))
@@ -89,27 +97,30 @@ recalibratePeaks <- function(listPeaks, referenceMZ, imageShape,
   # Shift the m/z values
   for (j in 1:numspectra)
   {
+    if (is.na(fitteddist[j])) {
+      next()
+    }
     listPeaks[[j]]@mass <- listPeaks[[j]]@mass - fitteddist[j]
-    listPeaks[[j]] <- createMassPeaks(mass = listPeaks[[j]]@mass,
-                                      intensity = listPeaks[[j]]@intensity,
-                                      metaData = listPeaks[[j]]@metaData)
+    listPeaks[[j]] <- createMassPeaks(
+      mass = listPeaks[[j]]@mass,
+      intensity = listPeaks[[j]]@intensity,
+      metaData = listPeaks[[j]]@metaData
+    )
   }
 
   # Fit LOESS after recalibrating
-  recalDist <- sapply(1:numspectra, function(z)
-  {
+  recalDist <- sapply(1:numspectra, function(z) {
     listPeaks[[z]]@mass[matched_mat$matchedIdx[[z]]] - referenceMZ
   })
 
-  if (genPlot)
-    plot(1:numspectra, recalDist, col = 'blue', pch = 20)
+  if (genPlot) {
+    plot(1:numspectra, recalDist, col = "blue", pch = 20)
+  }
 
-  if (saveRecal)
-  {
+  if (saveRecal) {
     cat("saving re-calibrated data...\n")
     ## Convert into spectra
-    spectra <- lapply(listPeaks, function(z)
-    {
+    spectra <- lapply(listPeaks, function(z) {
       createMassSpectrum(mass = z@mass, intensity = z@intensity, metaData = z@metaData)
     })
     exportImzMl(x = spectra, file = saveFilename, processed = TRUE, force = TRUE)
