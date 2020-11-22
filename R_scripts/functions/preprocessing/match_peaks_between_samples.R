@@ -359,10 +359,17 @@ matchPeaksWithCMZ <- function(listDataDirs,
     matched_ix <- array(NA, length(commonMZ))
     for (j in 1:length(commonMZ))
     {
-      minDistIdx <- which.min(abs(commonMZ[j] - temp$mz))
-      minDistPPM <- .ppmDist(temp$mz[minDistIdx], commonMZ[j])
-      if (minDistPPM <= tolPPM)
-        matched_ix[j] <- minDistIdx
+      candidate <- c()
+      for (k in 1:length(temp$mz)) {
+        if (.ppmDist(temp$mz[k], commonMZ[j]) <= tolPPM) {
+          candidate <- c(candidate, k)
+        }
+      }
+      if (length(candidate) == 1) {
+        matched_ix[j] <- k
+      } else if (length(candidate) > 1) {
+        matched_ix[j] <- candidate[which.max(apply(temp$X[, k], 1, mean, na.rm = TRUE))]
+      }
     }
     if (verbose)
       cat('unmatched peaks:', sum(is.na(matched_ix)), '\n')
