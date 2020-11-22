@@ -371,6 +371,10 @@ matchPeaksWithCMZ <- function(listDataDirs,
         matched_ix[j] <- candidate[which.max(apply(temp$X[, k], 1, mean, na.rm = TRUE))]
       }
     }
+    
+    # Check that there are no duplicated assignments. In that case, reduce the tolerance.
+    stopifnot(length(matched_ix[!is.na(matched_ix)]) == length(unique(matched_ix[!is.na(matched_ix)])))
+    
     if (verbose)
       cat('unmatched peaks:', sum(is.na(matched_ix)), '\n')
     stopifnot(all(diff(matched_ix) > 0, na.rm = T))
