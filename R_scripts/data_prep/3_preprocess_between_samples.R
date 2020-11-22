@@ -97,7 +97,7 @@ save(cmz, file = here("DATA", "RData", "cmz_between_samples.RData"))
 # Match the test samples
 matchPeaksWithCMZ(samples_dirs[idx_samples$test],
                   cmz,
-                  tolPPM = 20,
+                  tolPPM = 5,
                   inputFilename = 'X_matched_between_SPUTNIK.RData',
                   outFilename = 'X_matched_with_cmz.RData',
                   verbose = TRUE)
